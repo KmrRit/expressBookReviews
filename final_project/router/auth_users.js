@@ -3,70 +3,66 @@ const jwt = require('jsonwebtoken');
 let books = require("./booksdb.js");
 const regd_users = express.Router();
 
-let users = [
-    {
-        "username": "asif",
-        "password": "12345"
-    }
-];
-const jwtSecret = '244d0b97c61cb978567e348a15fc8cd5c3c5791af982ccae88db48383bc3c273';
+const secretKey = 'verysecret';
+let users = [{ "username": "test", "password": "password123" }];
 
-const isValid = (username) => { //returns boolean
-    //write code to check is the username is valid
-    return true
+const isValid = (username)=>{ //returns boolean
+  return users.some(user => user.username === username);
 }
 
-const authenticatedUser = (username, password) => { //returns boolean
-    //write code to check if username and password match the one we have in records.
-    return true
+const authenticatedUser = (username,password)=>{ //returns boolean
+  const user = users.find(user => user.username === username);
+  return user && user.password === password;
 }
 
 //only registered users can login
-regd_users.post("/login", (req, res) => {
-    //Write your code here
-    const { username, password } = req.body;
-    const user = users.find(u => u.username === username && u.password === password);
-    if (user) {
-        const token = jwt.sign({ username: user.username }, jwtSecret, { expiresIn: '1h' });
-        res.status(200).json({ token });
-    } else {
-        res.status(401).json({ message: "Invalid username or password" });
-    }
+regd_users.post("/login", (req,res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ message: 'Username and password are required.' });
+  }
+  if (!isValid(username) || !authenticatedUser(username, password)) {
+    return res.status(401).json({ message: 'Invalid username or password.' });
+  }
+  const token = jwt.sign({ username }, secretKey, { expiresIn: 60 * 60 });
+  req.session.authorization = { username, token };
+  res.status(200).json({ message: 'Login successful.', token });
 });
 
 // Add a book review
 regd_users.put("/auth/review/:isbn", (req, res) => {
-    //Write your code here
-    const isbn = req.params.isbn;
-    const review = req.query.review;
-    const token = req.headers.authorization.split(" ")[1];
-    const decoded = jwt.verify(token, jwtSecret);
-    const username = decoded.username;
+  const isbn = req.params.isbn;
+  const review = req.query.review;
+  const username = req.session.authorization.username;
 
-    if (books[isbn]) {
-        if (!books[isbn].reviews) {
-            books[isbn].reviews = {};
-        }
-        books[isbn].reviews[username] = review;
-        res.status(200).json({ message: "Review added/updated successfully" });
-    } else {
-        res.status(404).json({ message: "Book not found" });
-    }
+  if (!username) {
+    return res.status(401).send("Unauthorized");
+  }
+  
+  if (books[isbn]) {
+      let book = books[isbn];
+      book.reviews[username] = review;
+      return res.status(200).send(`Review successfully posted for ISBN ${isbn}`);
+  } else {
+      return res.status(404).json({ message: `ISBN ${isbn} not found` });
+  }
 });
 
 regd_users.delete("/auth/review/:isbn", (req, res) => {
-    const isbn = req.params.isbn;
-    const token = req.headers.authorization.split(" ")[1];
-    const decoded = jwt.verify(token, jwtSecret);
-    const username = decoded.username;
+  const isbn = req.params.isbn;
+  const username = req.session.authorization.username;
 
-    if (books[isbn] && books[isbn].reviews && books[isbn].reviews[username]) {
-        delete books[isbn].reviews[username];
-        res.status(200).json({ message: "Review deleted successfully" });
-    } else {
-        res.status(404).json({ message: "Review not found" });
-    }
+  if (!username) {
+      return res.status(401).json({ message: "Unauthorized: Please log in." });
+  }
+
+  if (books[isbn] && books[isbn].reviews[username]) {
+    delete books[isbn].reviews[username];
+    return res.status(200).json({ message: "Review posted by user deleted successfully." });
+  }
+  return res.status(404).json({ message: "Review not found or you do not have permission." });
 });
+
 
 module.exports.authenticated = regd_users;
 module.exports.isValid = isValid;
